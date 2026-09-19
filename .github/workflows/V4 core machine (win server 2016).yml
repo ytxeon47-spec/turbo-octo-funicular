@@ -1,0 +1,88 @@
+name: Windows Server 2016 noVNC Tailscale (4-Core 8GB 128GB Auth)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-windows:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Enable KVM Hardware Acceleration
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-kvm net-tools
+          sudo chmod 666 /dev/kvm
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Establish Tailscale Connection
+        run: |
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-$GITHUB_RUN_ID
+          
+          TS_IP=""
+          RETRIES=0
+          while [ -z "$TS_IP" ] && [ $RETRIES -lt 10 ]; do
+              TS_IP=$(tailscale ip -4)
+              sleep 5
+              RETRIES=$((RETRIES+1))
+          done
+          
+          if [ -z "$TS_IP" ]; then
+              echo "Tailscale IP not assigned. Exiting."
+              exit 1
+          fi
+          
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+
+      - name: Run Windows Server 2016 Container
+        run: |
+          USERNAME="MXDEV"
+          PASSWORD="MXDEV123"
+          
+          echo "RDP_USER=$USERNAME" >> $GITHUB_ENV
+          echo "RDP_PASS=$PASSWORD" >> $GITHUB_ENV
+
+          docker run -d --name windows \
+            -e VERSION="2016" \
+            -e USERNAME="$USERNAME" \
+            -e PASSWORD="$PASSWORD" \
+            -e AUTOLOGIN="N" \
+            -e CPU_CORES="4" \
+            -e RAM_SIZE="8G" \
+            -e DISK_SIZE="128G" \
+            -p 8006:8006 \
+            -p 3389:3389 \
+            --device=/dev/kvm \
+            --device=/dev/net/tun \
+            --cap-add NET_ADMIN \
+            --stop-timeout 120 \
+            docker.io/dockurr/windows
+
+      - name: Maintain Connection
+        run: |
+          echo -e "\n======================================================="
+          echo " This session is brought to you by MX DEV!"
+          echo " Subscribe to our Telegram channel for more methods:"
+          echo " https://t.me/mxdevrdp"
+          echo -e "=======================================================\n"
+          
+          echo -e "\n=== WINDOWS SERVER 2016 CONNECT INFO ==="
+          echo "Direct Web noVNC: http://$TAILSCALE_IP:8006"
+          echo "RDP Address:      $TAILSCALE_IP:3389"
+          echo "-------------------------------------------------------"
+          echo "Username:         $RDP_USER"
+          echo "Password:         $RDP_PASS"
+          echo "Autologin:        DISABLED (Password Required)"
+          echo "Resources:        4 CPU Cores | 8 GB RAM"
+          echo "System Disk:      128GB (Single Drive)"
+          echo "=======================================================\n"
+          
+          while true; do
+              echo "[$(date)] Windows Server 2016 Active - MX DEV (https://t.me/mxdevrdp)"
+              sleep 300
+          done
+
