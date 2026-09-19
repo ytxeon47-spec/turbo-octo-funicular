@@ -1,0 +1,84 @@
+name: Tiny10 noVNC Tailscale (4-Core 12GB 512GB Auto-login)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-windows:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Enable KVM Hardware Acceleration
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-kvm net-tools
+          sudo chmod 666 /dev/kvm
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Establish Tailscale Connection
+        run: |
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-$GITHUB_RUN_ID
+          
+          TS_IP=""
+          RETRIES=0
+          while [ -z "$TS_IP" ] && [ $RETRIES -lt 10 ]; do
+              TS_IP=$(tailscale ip -4)
+              sleep 5
+              RETRIES=$((RETRIES+1))
+          done
+          
+          if [ -z "$TS_IP" ]; then
+              echo "Tailscale IP not assigned. Exiting."
+              exit 1
+          fi
+          
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+
+      - name: Run Tiny10 Container
+        run: |
+          USERNAME="MXDEV"
+          
+          echo "RDP_USER=$USERNAME" >> $GITHUB_ENV
+
+          docker run -d --name windows \
+            -e VERSION="tiny10" \
+            -e USERNAME="$USERNAME" \
+            -e AUTOLOGIN="Y" \
+            -e CPU_CORES="4" \
+            -e RAM_SIZE="12G" \
+            -e DISK_SIZE="512G" \
+            -p 8006:8006 \
+            -p 3389:3389 \
+            --device=/dev/kvm \
+            --device=/dev/net/tun \
+            --cap-add NET_ADMIN \
+            --stop-timeout 120 \
+            docker.io/dockurr/windows
+
+      - name: Maintain Connection
+        run: |
+          echo -e "\n======================================================="
+          echo " This session is brought to you by MX DEV!"
+          echo " Subscribe to our Telegram channel for more methods:"
+          echo " https://t.me/mxdevrdp"
+          echo -e "=======================================================\n"
+          
+          echo -e "\n=== TINY10 CONNECT INFO ==="
+          echo "Direct Web noVNC: http://$TAILSCALE_IP:8006"
+          echo "RDP Address:      $TAILSCALE_IP:3389"
+          echo "-------------------------------------------------------"
+          echo "Username:         $RDP_USER"
+          echo "Autologin:        ENABLED (No Password Required)"
+          echo "Resources:        4 CPU Cores | 12 GB RAM"
+          echo "System Disk:      512GB (Single Drive)"
+          echo "=======================================================\n"
+          
+          while true; do
+              echo "[$(date)] Tiny10 Active - MX DEV (https://t.me/mxdevrdp)"
+              sleep 300
+          done
+
